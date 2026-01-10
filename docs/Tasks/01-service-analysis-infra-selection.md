@@ -44,4 +44,56 @@ As the application is already containerised, which makes ECS a natural fit and w
 
 
 ### 2. Frontend Service
+CloudFront + S3 (Static Hosting) or ECS Fargate
+
+**WHY?**
+cloudfront is best for static webpages along with S3 as a static website, and world wide website can be accessed with low latency. As cloudfront provides free SSL certificates.
+WAF can be enabled for DDOS protection
+
+** Alternate**
+ECS fargate
+similar configuration as of backend(1CPU, 2gi memory)
+Cost: 50-100$ monthly
+
+- **COST**
+  - 5-20$ monthly 
+  - much cheaper than running containers
+- **SCALING**
+  - automatic scaling will be handled by CDN, S3
+
+
+### 3. Database
+MongoDB Atlas on AWS
+
+**WHY?**
+DocumentDB is compatible but have versions configuration issue with mongo vesions
+DocumentDB: managed svc. Handles backup, monitoring, maintenance with multi region support. Automated daily backup with point in time recovery.
+
+- **CONFIGURATION**
+ - M10 family(2CPU, 10GB ram)
+ - 40GB disk space(with autoscaling enabled)
+ - 3 node AZ with backup and retention enabled
+
+- **SCALING**
+  - upograde cluster as grows(vertical scaling). enable failover
+  - horizontal: add shards for large dataset
+
+- **COST**
+   - ATLAS: 150-200$/month
+   - storage: .25$/gb
+
+
+### 4. MESSAGE & EVENT
+SQS +  SNS + eventbridge
+
+SQS for queuing task(can enable cron as well using eventbridge can run it for particular event and then send notification via SNS when task is successful)
+
+- **Dead Letter Queue**: Configure for failed messages
+- **SNS**
+  - need pub/sub messaging (multiple subscribers)
+  - notify multiple services of events
+
+**Cost:**
+- **SQS**: Free tier (1M requests/month), then $0.40/1M requests
+- **EventBridge**: First 1M custom events/month free, then $1.00/1M events
 
