@@ -1,0 +1,8 @@
+{
+    "podLabels": {
+        "ftowner": "devops",
+        "env" : "production",
+        "name" : "kube-proxy",
+        "product": "devops"
+    }
+}

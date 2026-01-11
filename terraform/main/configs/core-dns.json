@@ -1,0 +1,74 @@
+{
+  "affinity": {
+      "nodeAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": {
+              "nodeSelectorTerms": [
+                  {
+                      "matchExpressions": [
+                          {
+                              "key": "arch",
+                              "operator": "In",
+                              "values": ["arm"]
+                          }
+                      ]
+                  }
+              ]
+          },
+          "preferredDuringSchedulingIgnoredDuringExecution": [
+              {
+                  "preference": {
+                      "matchExpressions": [
+                          {
+                              "key": "capacity",
+                              "operator": "In",
+                              "values": ["ondemand"]
+                          }
+                      ]
+                  },
+                  "weight": 60
+              },
+              {
+                  "preference": {
+                      "matchExpressions": [
+                          {
+                              "key": "capacity",
+                              "operator": "In",
+                              "values": ["spot"]
+                          }
+                      ]
+                  },
+                  "weight": 40
+              }
+          ]
+      }
+  },
+  "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "operator": "Equal",
+        "key": "arch",
+        "value": "arm"
+      }
+  ],
+  "podLabels": {
+    "ftowner": "devops",
+    "env" : "production",
+    "name" : "core-dns",
+    "product": "devops"
+  },
+  "autoScaling": {
+    "enabled": true,
+    "minReplicas": 20,
+    "maxReplicas": 80
+  },
+  "resources": {
+    "requests": {
+      "cpu": "100m",
+      "memory": "170Mi"
+    },
+    "limits": {
+      "cpu": "500m",
+      "memory": "512Mi"
+    }
+  }
+}
