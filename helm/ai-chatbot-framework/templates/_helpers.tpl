@@ -60,3 +60,45 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Get MongoDB secret name
+*/}}
+{{- define "ai-chatbot-framework.mongodbSecretName" -}}
+{{- if .Values.mongodb.enabled }}
+  {{- if .Values.secrets.mongodb.name }}
+    {{- .Values.secrets.mongodb.name }}
+  {{- else }}
+    {{- printf "%s-mongodb-secret" (include "ai-chatbot-framework.fullname" .) }}
+  {{- end }}
+{{- else if .Values.documentdb.enabled }}
+  {{- if .Values.secrets.documentdb.name }}
+    {{- .Values.secrets.documentdb.name }}
+  {{- else }}
+    {{- printf "%s-documentdb-secret" (include "ai-chatbot-framework.fullname" .) }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Get MongoDB connection string
+*/}}
+{{- define "ai-chatbot-framework.mongodbConnectionString" -}}
+{{- if .Values.mongodb.enabled }}
+  {{- $username := .Values.mongodb.auth.username }}
+  {{- $password := .Values.mongodb.auth.password | default (randAlphaNum 16) }}
+  {{- $host := printf "%s-mongodb" (include "ai-chatbot-framework.fullname" .) }}
+  {{- $port := 27017 }}
+  {{- $database := .Values.mongodb.auth.database }}
+  {{- printf "mongodb://%s:%s@%s:%d/%s" $username $password $host $port $database }}
+{{- else if .Values.documentdb.enabled }}
+  {{- $host := .Values.documentdb.endpoint }}
+  {{- $port := .Values.documentdb.port }}
+  {{- $database := .Values.documentdb.database }}
+  {{- if and .Values.documentdb.username .Values.documentdb.password }}
+    {{- printf "mongodb://%s:%s@%s:%d/%s?tls=true" .Values.documentdb.username .Values.documentdb.password $host $port $database }}
+  {{- else }}
+    {{- printf "mongodb://%s:%d/%s?tls=true" $host $port $database }}
+  {{- end }}
+{{- end }}
+{{- end }}

@@ -1,45 +1,358 @@
-replicaCount: 2
+# Default values for ai-chatbot-framework
+# This is a YAML-formatted file.
 
-image:
-  backend:
-    repository: "alfredfrancis/ai-chatbot-framework_backend"
-  frontend:
-    repository: "alfredfrancis/ai-chatbot-framework_frontend"
-  pullPolicy: Always
-  tag: "latest"
+# Global settings
+global:
+  environment: prod  # dev, staging, prod
+  imageRegistry: ""
+  imagePullSecrets: []
 
+# Application name override
 nameOverride: ""
 fullnameOverride: ""
 
+# Replica counts
+replicaCount:
+  backend: 2
+  frontend: 2
+
+# Image configurations
+image:
+  registry: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  
+  backend:
+    repository: alfredfrancis/ai-chatbot-framework_backend
+    tag: "latest"
+    
+  frontend:
+    repository: alfredfrancis/ai-chatbot-framework_frontend
+    tag: "latest"
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 2000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Security context
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Backend configuration
+backend:
+  enabled: true
+  
+  # Resource requests and limits (ML workloads need more resources)
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  
+  # Node selector for ML workloads (optional)
+  nodeSelector:
+    workload-type: general  # Can be changed to "ml" for ML workloads
+  
+  # Tolerations for ML node groups
+  tolerations: []
+  
+  # Environment variables
+  env: []
+  
+  # Additional environment variables from secrets/configmaps
+  envFrom: []
+  
+  # Command override
+  command: []
+  args: []
+  
+  # Port configuration
+  port: 80
+  
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+    successThreshold: 1
+  
+  # Startup probe (for slow-starting applications)
+  startupProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 30
+    successThreshold: 1
+  
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+        selectPolicy: Max
+
+# Frontend configuration
+frontend:
+  enabled: true
+  
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "500m"
+  
+  # Environment variables
+  env: []
+  
+  # Port configuration
+  port: 80
+  
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Service configuration
+service:
+  type: ClusterIP
+  backend:
+    port: 80
+    targetPort: http
+  frontend:
+    port: 80
+    targetPort: http
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "alb"  # Use "alb" for AWS Load Balancer Controller
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: ""  # Set in environment-specific values
+  hosts:
+    - host: chatbot.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+  tls: []
+  # TLS configuration (if using cert-manager or other)
+  # tls:
+  #   - secretName: ai-chatbot-framework-tls
+  #     hosts:
+  #       - chatbot.example.com
+
+# MongoDB configuration
 mongodb:
   enabled: true
-  uri: "mongodb://root:root@ai-chatbot-framework-mongodb:27017/ai_chatbot_framework"
+  # Use Bitnami MongoDB chart
   auth:
-    username: root
-    password: root
+    enabled: true
+    rootPassword: ""  # Will be generated if not set
+    username: admin
+    password: ""  # Will be generated if not set
     database: ai_chatbot_framework
-    rootPassword: root
-  service:
-    name: ai-chatbot-framework-mongodb
-    port: 27017
-
-service:
-  url: ai-chatbot-framework.local
-  type: ClusterIP
-  port: 80
-
-resources:
-  frontend:
+  architecture: standalone
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
     requests:
-      memory: "64Mi"
-      cpu: "100m"
-    limits:
-      memory: "128Mi"
+      memory: "512Mi"
       cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# DocumentDB configuration (alternative to MongoDB)
+documentdb:
+  enabled: false
+  endpoint: ""  # e.g., "docdb-cluster.cluster-xxxxx.us-east-1.docdb.amazonaws.com"
+  port: 27017
+  database: ai_chatbot_framework
+  # Credentials from secret
+  secretName: ""  # Name of secret containing username and password
+  secretKeyUsername: username
+  secretKeyPassword: password
+  # Or direct credentials (not recommended for production)
+  username: ""
+  password: ""
+
+# Application configuration
+config:
+  # MongoDB connection (will use mongodb or documentdb based on enabled flag)
+  mongodbHost: ""  # Auto-configured based on mongodb/documentdb settings
+  mongodbDatabase: ai_chatbot_framework
+  applicationEnv: Production
+  
+  # ML/NLU configuration
+  modelsDir: "/app/model_files"
+  defaultFallbackIntentName: "fallback"
+  defaultWelcomeIntentName: "init_conversation"
+  spacyLangModel: "en_core_web_lg"  # Use "en_core_web_md" for dev
+  
+  # LLM configuration (optional)
+  llm:
+    enabled: false
+    baseUrl: "http://127.0.0.1:11434/v1"
+    apiKey: ""
+    modelName: "llama2:13b-chat"
+    maxTokens: 4096
+    temperature: 0.7
+
+# Secrets configuration
+secrets:
+  # Create secrets from values (not recommended for production)
+  create: false
+  # Or reference existing secrets
+  mongodb:
+    name: ""  # Name of existing secret
+    usernameKey: username
+    passwordKey: password
+  documentdb:
+    name: ""  # Name of existing secret (e.g., from AWS Secrets Manager)
+    usernameKey: username
+    passwordKey: password
+  app:
+    name: ""  # Name of existing secret for app-specific secrets
+    keys: []  # List of keys to include
+
+# ConfigMap configuration
+configMap:
+  create: true
+  data: {}
+
+# Init containers
+initContainers:
   backend:
-    requests:
-      memory: "1024Mi"
-      cpu: "100m"
-    limits:
-      memory: "2048Mi"
-      cpu: "500m"
+    enabled: true
+    image:
+      repository: alfredfrancis/ai-chatbot-framework_backend
+      tag: "latest"
+    command: ["python", "manage.py", "migrate"]
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+
+# Persistence (for model files, etc.)
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Monitoring
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  backend:
+    minAvailable: 1
+  frontend:
+    minAvailable: 1

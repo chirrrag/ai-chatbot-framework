@@ -1,0 +1,26 @@
+{{- if .Values.configMap.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-chatbot-framework.fullname" . }}-config
+  labels:
+    {{- include "ai-chatbot-framework.labels" . | nindent 4 }}
+data:
+  APPLICATION_ENV: {{ .Values.config.applicationEnv | quote }}
+  MONGODB_DATABASE: {{ .Values.config.mongodbDatabase | quote }}
+  MODELS_DIR: {{ .Values.config.modelsDir | quote }}
+  DEFAULT_FALLBACK_INTENT_NAME: {{ .Values.config.defaultFallbackIntentName | quote }}
+  DEFAULT_WELCOME_INTENT_NAME: {{ .Values.config.defaultWelcomeIntentName | quote }}
+  SPACY_LANG_MODEL: {{ .Values.config.spacyLangModel | quote }}
+  {{- if .Values.config.llm.enabled }}
+  LLM_BASE_URL: {{ .Values.config.llm.baseUrl | quote }}
+  LLM_API_KEY: {{ .Values.config.llm.apiKey | quote }}
+  LLM_MODEL_NAME: {{ .Values.config.llm.modelName | quote }}
+  LLM_MAX_TOKENS: {{ .Values.config.llm.maxTokens | quote }}
+  LLM_TEMPERATURE: {{ .Values.config.llm.temperature | quote }}
+  {{- end }}
+  {{- range $key, $value := .Values.configMap.data }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+

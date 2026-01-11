@@ -1,37 +1,40 @@
----
+{{- if .Values.backend.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "ai-chatbot-framework.fullname" . }}-backend
   labels:
-    app: "ai-chatbot-framework"
-    name: "ai-chatbot-framework-backend"
     {{- include "ai-chatbot-framework.labels" . | nindent 4 }}
+    component: backend
 spec:
   type: {{ .Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: 80
+    - port: {{ .Values.service.backend.port }}
+      targetPort: http
       protocol: TCP
-      name: http-backend
+      name: http
   selector:
-    name: "ai-chatbot-framework-backend"
+    {{- include "ai-chatbot-framework.selectorLabels" . | nindent 4 }}
+    component: backend
+{{- end }}
 
 ---
+{{- if .Values.frontend.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "ai-chatbot-framework.fullname" . }}-frontend
   labels:
-    app: "ai-chatbot-framework"
-    name: "ai-chatbot-framework-frontend"
     {{- include "ai-chatbot-framework.labels" . | nindent 4 }}
+    component: frontend
 spec:
   type: {{ .Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: 80
+    - port: {{ .Values.service.frontend.port }}
+      targetPort: http
       protocol: TCP
-      name: http-frontend
+      name: http
   selector:
-    name: "ai-chatbot-framework-frontend"
+    {{- include "ai-chatbot-framework.selectorLabels" . | nindent 4 }}
+    component: frontend
+{{- end }}
