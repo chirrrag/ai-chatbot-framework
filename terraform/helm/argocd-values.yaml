@@ -1,0 +1,277 @@
+# ArgoCD Helm Chart Values
+# High Availability Configuration for Production
+
+# Global configuration
+global:
+  image:
+    tag: "v2.9.0"
+
+# Argo CD Controller
+controller:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# Argo CD Server
+server:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  
+  # Ingress configuration with TLS
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/healthcheck-path: /healthz
+      alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+      alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+      alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+      alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+      alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+      # Set certificate ARN via terraform set or values override
+      # alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:region:account:certificate/cert-id"
+    hosts:
+      - argocd.example.com  # Override via terraform set
+    tls:
+      - secretName: argocd-secret
+        hosts:
+          - argocd.example.com  # Override via terraform set
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  
+  # Additional command arguments
+  extraArgs:
+    - --insecure=false
+    - --enable-gzip=true
+
+# Argo CD Repo Server
+repoServer:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# Argo CD ApplicationSet Controller
+applicationSet:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Argo CD Notifications Controller
+notifications:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Argo CD Redis
+redis:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Argo CD Dex (for SSO)
+dex:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Configurations
+configs:
+  # RBAC configuration - will be managed via ConfigMap
+  rbac:
+    policy.default: role:readonly
+    # policy.csv will be set via ConfigMap after installation
+  
+  # SSO configuration (Dex) - example configuration
+  cm:
+    url: ""  # Set to your ArgoCD URL, e.g., https://argocd.example.com
+    # Dex configuration example (uncomment and configure as needed)
+    # dex.config: |
+    #   connectors:
+    #     - type: oidc
+    #       id: oidc
+    #       name: OIDC Provider
+    #       config:
+    #         issuer: https://your-oidc-provider.com
+    #         clientID: argocd-client-id
+    #         clientSecret: $oidc-client-secret
+    #         requestedScopes:
+    #           - openid
+    #           - profile
+    #           - email
+    #           - groups
+  
+  # Repository credentials
+  repositoryCredentials: {}
+  
+  # Secret management
+  secret:
+    argocdServerAdminPassword: ""  # Auto-generated if not set
+    argocdServerAdminPasswordMtime: ""
+  
+  # TLS certificates
+  tlsCerts: {}
+  
+  # Known hosts for SSH
+  knownHosts: {}
+  
+  # Notifications configuration
+  notifications:
+    # Slack configuration example
+    # service.slack: |
+    #   token: $slack-token
+    #   username: ArgoCD
+    #   channel: "#argocd-notifications"
+    # 
+    # # Email configuration example
+    # service.email: |
+    #   host: smtp.gmail.com
+    #   port: 587
+    #   from: argocd@example.com
+    #   username: argocd@example.com
+    #   password: $email-password
+    #   to:
+    #     - devops-team@example.com
+    #   secure: true
+    # 
+    # # Notification triggers
+    # triggers: |
+    #   - description: Application is syncing
+    #     send:
+    #       - app-syncing
+    #     when: app.status.operationState.phase in ['Running']
+    #   - description: Application synced successfully
+    #     send:
+    #       - app-synced
+    #     when: app.status.operationState.phase in ['Succeeded']
+    #   - description: Application sync failed
+    #     send:
+    #       - app-sync-failed
+    #     when: app.status.operationState.phase in ['Error', 'Failed']
+
+# Redis HA configuration
+redis-ha:
+  enabled: true
+  redis:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  haproxy:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+# Pod Disruption Budgets
+podDisruptionBudget:
+  enabled: true
+  controller:
+    minAvailable: 2
+  server:
+    minAvailable: 1
+  repoServer:
+    minAvailable: 1
+  applicationSet:
+    minAvailable: 1
+  notifications:
+    minAvailable: 1
+
+# Network Policies
+networkPolicy:
+  enabled: false  # Enable if using network policies
+
+# Service Account
+serviceAccount:
+  create: true
+  name: argocd-argocd-server
+  annotations: {}
+
+# Security Context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  fsGroup: 999
+
+# Node Selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Metrics
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Additional volumes
+extraVolumes: []
+
+# Additional volume mounts
+extraVolumeMounts: []
+
