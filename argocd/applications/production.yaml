@@ -1,0 +1,127 @@
+# ArgoCD Application for Production Environment
+# This application deploys the AI Chatbot Framework to the production environment
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-chatbot-framework-production
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: ai-chatbot-framework
+    app.kubernetes.io/instance: production
+    environment: production
+    app.kubernetes.io/part-of: argocd-apps
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    # Notification annotations for production
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: argocd-notifications
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: argocd-notifications
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: argocd-notifications
+    notifications.argoproj.io/subscribe.on-sync-succeeded.email: argocd-notifications
+    notifications.argoproj.io/subscribe.on-sync-failed.email: argocd-notifications
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/your-org/ai-chatbot-framework  # Update with your repo URL
+    targetRevision: main  # Use main branch for production
+    path: helm/ai-chatbot-framework
+    helm:
+      valueFiles:
+        - values-prod.yaml
+      # Override specific values if needed
+      # values: |
+      #   image:
+      #     backend:
+      #       tag: "v1.0.0"  # Use specific version tags in production
+      #     frontend:
+      #       tag: "v1.0.0"
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  
+  syncPolicy:
+    # Manual sync for production (requires explicit approval)
+    automated:
+      prune: false
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+    # Rollback configuration - enable automatic rollback on failure
+    syncStrategy:
+      hook:
+        force: false
+    # Manual sync windows for production
+    # syncWindows:
+    #   - kind: allow
+    #     schedule: "0 2 * * *"  # Allow syncs at 2 AM UTC
+    #     duration: 2h
+    #     applications:
+    #       - ai-chatbot-framework-production
+  
+  # Health checks - comprehensive health monitoring
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ai-chatbot-framework-backend
+      namespace: production
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ai-chatbot-framework-frontend
+      namespace: production
+    - apiVersion: v1
+      kind: Service
+      name: ai-chatbot-framework-backend
+      namespace: production
+    - apiVersion: v1
+      kind: Service
+      name: ai-chatbot-framework-frontend
+      namespace: production
+    - apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      name: ai-chatbot-framework
+      namespace: production
+    - apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      name: ai-chatbot-framework-backend
+      namespace: production
+    - apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      name: ai-chatbot-framework-frontend
+      namespace: production
+  
+  # Ignore differences for certain fields that may change dynamically
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/spec/containers/0/image
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+        - /spec/maxReplicas
+        - /status
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .spec.template.spec.containers[]?.image
+  
+  # Sync waves - ensure production is deployed last
+  syncWave: 3
+

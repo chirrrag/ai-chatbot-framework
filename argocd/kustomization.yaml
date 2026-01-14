@@ -1,0 +1,18 @@
+# Kustomization file for ArgoCD Applications
+# This allows managing all applications together
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+  - app-of-apps.yaml
+  - applications/dev.yaml
+  - applications/staging.yaml
+  - applications/production.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: argocd-apps
+  app.kubernetes.io/managed-by: argocd
+

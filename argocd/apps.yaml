@@ -1,0 +1,52 @@
+# ArgoCD App-of-Apps Root Application
+# This is the root application that manages all environment applications
+# Apply this first: kubectl apply -f argocd/app-of-apps.yaml
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-chatbot-framework-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: ai-chatbot-framework
+    app.kubernetes.io/part-of: argocd-apps
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/your-org/ai-chatbot-framework  # Update with your repo URL
+    targetRevision: main
+    path: argocd/applications
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Health checks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+  
+  # Sync waves - ensure applications are created in order
+  syncWave: 0
+
