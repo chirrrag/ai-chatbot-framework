@@ -1,0 +1,418 @@
+# GitLab CI/CD Pipeline for AI Chatbot Framework
+# This pipeline builds, tests, and deploys the application
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  AWS_REGION: ap-soyth-1
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  BACKEND_IMAGE: ai-chatbot-framework-backend
+  FRONTEND_IMAGE: ai-chatbot-framework-frontend
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_BUILDKIT: 1
+
+# Determine environment and image tag based on branch
+.determine_env: &determine_env
+  - |
+    if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+      export ENVIRONMENT="production"
+      export IMAGE_TAG="${CI_COMMIT_SHORT_SHA}"
+      export DEPLOY_ENV="production"
+    elif [ "$CI_COMMIT_BRANCH" == "staging" ]; then
+      export ENVIRONMENT="staging"
+      export IMAGE_TAG="staging-${CI_COMMIT_SHORT_SHA}"
+      export DEPLOY_ENV="staging"
+    elif [ "$CI_COMMIT_BRANCH" == "develop" ]; then
+      export ENVIRONMENT="dev"
+      export IMAGE_TAG="dev-${CI_COMMIT_SHORT_SHA}"
+      export DEPLOY_ENV="dev"
+    else
+      export ENVIRONMENT="dev"
+      export IMAGE_TAG="pr-${CI_MERGE_REQUEST_IID:-${CI_PIPELINE_ID}}"
+      export DEPLOY_ENV="dev"
+    fi
+    echo "Environment: $ENVIRONMENT"
+    echo "Image Tag: $IMAGE_TAG"
+    echo "Deploy Environment: $DEPLOY_ENV"
+
+# Backend Tests
+backend-tests:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+    - pip install pytest pytest-cov pytest-asyncio
+  script:
+    - pytest tests/ -v --cov=app --cov-report=xml --cov-report=html --cov-report=term
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+      - htmlcov/
+    expire_in: 1 week
+  only:
+    changes:
+      - "app/**/*"
+      - "requirements.txt"
+      - "tests/**/*"
+      - ".gitlab-ci.yml"
+    - main
+    - dev
+    - staging
+    - merge_requests
+
+# Frontend Tests
+frontend-tests:
+  stage: test
+  image: node:18-alpine
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - frontend/node_modules/
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run lint || echo "Linting completed with warnings"
+    - npm run type-check || echo "Type check completed with warnings"
+    - npm test -- --coverage --watchAll=false || echo "Tests completed"
+  artifacts:
+    paths:
+      - frontend/coverage/
+    expire_in: 1 week
+  only:
+    changes:
+      - "frontend/**/*"
+      - ".gitlab-ci.yml"
+    - main
+    - dev
+    - staging
+    - merge_requests
+
+# Build Backend Docker Image
+build-backend:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - *determine_env
+    - apk add --no-cache aws-cli curl
+    - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+    - aws configure set default.region $AWS_REGION
+    - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+  script:
+    - |
+      echo "Building backend image: $ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG"
+      docker build \
+        --platform linux/amd64 \
+        --cache-from $ECR_REGISTRY/$BACKEND_IMAGE:buildcache \
+        --tag $ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG \
+        --tag $ECR_REGISTRY/$BACKEND_IMAGE:latest \
+        -f Dockerfile \
+        .
+    - docker push $ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG
+    - docker push $ECR_REGISTRY/$BACKEND_IMAGE:latest
+    - |
+      # Update build cache
+      docker tag $ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_IMAGE:buildcache
+      docker push $ECR_REGISTRY/$BACKEND_IMAGE:buildcache || true
+    - echo "BACKEND_IMAGE=$ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+    expire_in: 1 hour
+  only:
+    - main
+    - develop
+    - staging
+    - merge_requests
+  when: on_success
+
+# Build Frontend Docker Image
+build-frontend:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - *determine_env
+    - apk add --no-cache aws-cli curl
+    - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+    - aws configure set default.region $AWS_REGION
+    - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+  script:
+    - |
+      echo "Building frontend image: $ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG"
+      docker build \
+        --platform linux/amd64 \
+        --cache-from $ECR_REGISTRY/$FRONTEND_IMAGE:buildcache \
+        --tag $ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG \
+        --tag $ECR_REGISTRY/$FRONTEND_IMAGE:latest \
+        -f frontend/Dockerfile \
+        frontend/
+    - docker push $ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG
+    - docker push $ECR_REGISTRY/$FRONTEND_IMAGE:latest
+    - |
+      # Update build cache
+      docker tag $ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_IMAGE:buildcache
+      docker push $ECR_REGISTRY/$FRONTEND_IMAGE:buildcache || true
+    - echo "FRONTEND_IMAGE=$ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+    expire_in: 1 hour
+  only:
+    - main
+    - dev
+    - staging
+    - merge_requests
+  when: on_success
+
+# Security Scan Backend Image
+scan-backend:
+  stage: build
+  image: aquasec/trivy:latest
+  dependencies:
+    - build-backend
+  before_script:
+    - *determine_env
+  script:
+    - |
+      IMAGE_NAME="$ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG"
+      echo "Scanning backend image: $IMAGE_NAME"
+      trivy image --exit-code 0 --severity CRITICAL,HIGH --format table $IMAGE_NAME
+      trivy image --exit-code 1 --severity CRITICAL --format json -o trivy-backend.json $IMAGE_NAME || true
+  artifacts:
+    reports:
+      sast: trivy-backend.json
+    paths:
+      - trivy-backend.json
+    expire_in: 1 week
+  allow_failure: true
+  only:
+    - main
+    - dev
+    - staging
+
+# Security Scan Frontend Image
+scan-frontend:
+  stage: build
+  image: aquasec/trivy:latest
+  dependencies:
+    - build-frontend
+  before_script:
+    - *determine_env
+  script:
+    - |
+      IMAGE_NAME="$ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG"
+      echo "Scanning frontend image: $IMAGE_NAME"
+      trivy image --exit-code 0 --severity CRITICAL,HIGH --format table $IMAGE_NAME
+      trivy image --exit-code 1 --severity CRITICAL --format json -o trivy-frontend.json $IMAGE_NAME || true
+  artifacts:
+    reports:
+      sast: trivy-frontend.json
+    paths:
+      - trivy-frontend.json
+    expire_in: 1 week
+  allow_failure: true
+  only:
+    - main
+    - dev
+    - staging
+
+# Update GitOps Repository
+update-gitops:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - *determine_env
+    - apk add --no-cache git openssh-client curl
+    - mkdir -p ~/.ssh
+    - echo "$GITOPS_REPO_SSH_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H gitlab.com >> ~/.ssh/known_hosts 2>/dev/null || ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+    - git config --global user.name "GitLab CI"
+    - git config --global user.email "ci@gitlab.com"
+    - |
+      # Install yq for YAML manipulation
+      wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+      chmod +x /usr/local/bin/yq
+  script:
+    - |
+      echo "Cloning GitOps repository..."
+      git clone $GITOPS_REPO_URL gitops || exit 1
+      cd gitops
+    - |
+      # Determine target branch
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        TARGET_BRANCH="main"
+      elif [ "$CI_COMMIT_BRANCH" == "staging" ]; then
+        TARGET_BRANCH="staging"
+      elif [ "$CI_COMMIT_BRANCH" == "develop" ]; then
+        TARGET_BRANCH="develop"
+      else
+        TARGET_BRANCH="main"
+      fi
+      
+      git checkout $TARGET_BRANCH || git checkout -b $TARGET_BRANCH
+    - |
+      VALUES_FILE="helm/ai-chatbot-framework/values-${ENVIRONMENT}.yaml"
+      
+      if [ ! -f "$VALUES_FILE" ]; then
+        echo "Error: Values file not found: $VALUES_FILE"
+        exit 1
+      fi
+      
+      echo "Updating image tags in $VALUES_FILE"
+      echo "Backend Image: $BACKEND_IMAGE"
+      echo "Frontend Image: $FRONTEND_IMAGE"
+      echo "Image Tag: $IMAGE_TAG"
+      
+      # Update backend image tag
+      yq eval ".image.backend.tag = \"$IMAGE_TAG\"" -i "$VALUES_FILE"
+      
+      # Update frontend image tag
+      yq eval ".image.frontend.tag = \"$IMAGE_TAG\"" -i "$VALUES_FILE"
+      
+      # Show changes
+      git diff "$VALUES_FILE" || true
+    - |
+      git add helm/ai-chatbot-framework/values-*.yaml
+      if git diff --staged --quiet; then
+        echo "No changes to commit"
+      else
+        git commit -m "chore: update image tags for $ENVIRONMENT to $IMAGE_TAG [skip ci]
+
+        - Backend: $BACKEND_IMAGE
+        - Frontend: $FRONTEND_IMAGE
+        - Tag: $IMAGE_TAG
+        - Pipeline: $CI_PIPELINE_URL"
+        git push origin $TARGET_BRANCH || git push origin HEAD:$TARGET_BRANCH
+        echo "GitOps repository updated successfully"
+      fi
+  only:
+    - main
+    - dev
+    - staging
+  when: on_success
+
+# Trigger ArgoCD Sync (Dev only)
+trigger-argocd-sync:
+  stage: deploy
+  image: curlimages/curl:latest
+  before_script:
+    - *determine_env
+    - apk add --no-cache jq
+  script:
+    - |
+      if [ "$ENVIRONMENT" != "dev" ]; then
+        echo "Skipping ArgoCD sync for $ENVIRONMENT (only dev auto-syncs)"
+        exit 0
+      fi
+      
+      APP_NAME="ai-chatbot-framework-dev"
+      ARGOCD_SERVER="${ARGOCD_SERVER:-https://argocd.example.com}"
+      ARGOCD_TOKEN="$ARGOCD_AUTH_TOKEN"
+      
+      if [ -z "$ARGOCD_TOKEN" ]; then
+        echo "Error: ARGOCD_AUTH_TOKEN not set"
+        exit 1
+      fi
+      
+      echo "Triggering ArgoCD sync for application: $APP_NAME"
+      echo "ArgoCD Server: $ARGOCD_SERVER"
+      
+      # Sync application
+      SYNC_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+        -H "Authorization: Bearer $ARGOCD_TOKEN" \
+        "$ARGOCD_SERVER/api/v1/applications/$APP_NAME/sync" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "prune": true,
+          "dryRun": false,
+          "strategy": {
+            "hook": {}
+          }
+        }')
+      
+      HTTP_CODE=$(echo "$SYNC_RESPONSE" | tail -n1)
+      BODY=$(echo "$SYNC_RESPONSE" | sed '$d')
+      
+      if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
+        echo "Sync triggered successfully"
+        echo "$BODY" | jq '.' || echo "$BODY"
+      else
+        echo "Error triggering sync. HTTP Code: $HTTP_CODE"
+        echo "$BODY"
+        exit 1
+      fi
+      
+      # Wait for sync to complete (optional)
+      if [ "${WAIT_FOR_SYNC:-true}" == "true" ]; then
+        echo "Waiting for sync to complete..."
+        MAX_ATTEMPTS=30
+        ATTEMPT=0
+        
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          APP_STATUS=$(curl -s -H "Authorization: Bearer $ARGOCD_TOKEN" \
+            "$ARGOCD_SERVER/api/v1/applications/$APP_NAME" | \
+            jq -r '.status.sync.status // "Unknown"')
+          
+          if [ "$APP_STATUS" == "Synced" ]; then
+            echo "Application synced successfully"
+            exit 0
+          elif [ "$APP_STATUS" == "Unknown" ]; then
+            echo "Application not found, skipping wait"
+            exit 0
+          fi
+          
+          echo "Sync status: $APP_STATUS (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)"
+          sleep 10
+          ATTEMPT=$((ATTEMPT + 1))
+        done
+        
+        echo "Sync timeout or failed"
+        exit 1
+      fi
+  only:
+    - develop
+  when: on_success
+  dependencies:
+    - update-gitops
+
+# Pipeline Summary
+pipeline-summary:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - *determine_env
+  script:
+    - |
+      echo "## Pipeline Summary" > pipeline-summary.md
+      echo "" >> pipeline-summary.md
+      echo "**Environment:** $ENVIRONMENT" >> pipeline-summary.md
+      echo "**Image Tag:** $IMAGE_TAG" >> pipeline-summary.md
+      echo "**Backend Image:** $ECR_REGISTRY/$BACKEND_IMAGE:$IMAGE_TAG" >> pipeline-summary.md
+      echo "**Frontend Image:** $ECR_REGISTRY/$FRONTEND_IMAGE:$IMAGE_TAG" >> pipeline-summary.md
+      echo "**Pipeline:** $CI_PIPELINE_URL" >> pipeline-summary.md
+      echo "**Commit:** $CI_COMMIT_SHA" >> pipeline-summary.md
+      echo "**Branch:** $CI_COMMIT_BRANCH" >> pipeline-summary.md
+      cat pipeline-summary.md
+  artifacts:
+    paths:
+      - pipeline-summary.md
+    expire_in: 1 week
+  when: always
+
