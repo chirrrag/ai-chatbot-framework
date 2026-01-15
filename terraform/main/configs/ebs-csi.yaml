@@ -1,0 +1,36 @@
+controller:
+  tolerations:
+  - effect: NoSchedule
+    key: arch
+    operator: Equal
+    value: amd64
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: arch
+            operator: In
+            values:
+            - amd64
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - preference:
+          matchExpressions:
+          - key: capacity
+            operator: In
+            values:
+            - ondemand
+        weight: 60
+      - preference:
+          matchExpressions:
+          - key: capacity
+            operator: In
+            values:
+            - spot
+        weight: 40
+
+customLabels:
+  ftowner: "devops"
+  env: "production"
+  name: "ebs-csi-controller"
+  product: "devops"

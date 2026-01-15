@@ -1,0 +1,94 @@
+# ArgoCD Application for Development Environment
+# This application deploys the AI Chatbot Framework to the dev environment
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-chatbot-framework-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: ai-chatbot-framework
+    app.kubernetes.io/instance: dev
+    environment: dev
+    app.kubernetes.io/part-of: argocd-apps
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/your-org/ai-chatbot-framework  # Update with your repo URL
+    targetRevision: develop  # Use develop branch for dev environment
+    path: helm/ai-chatbot-framework
+    helm:
+      valueFiles:
+        - values-dev.yaml
+      # Override specific values if needed
+      # values: |
+      #   image:
+      #     backend:
+      #       tag: "dev-latest"
+      #     frontend:
+      #       tag: "dev-latest"
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  
+  syncPolicy:
+    # Automated sync for dev environment
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    # Rollback configuration
+    syncStrategy:
+      hook: {}
+  
+  # Health checks
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ai-chatbot-framework-backend
+      namespace: dev
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ai-chatbot-framework-frontend
+      namespace: dev
+    - apiVersion: v1
+      kind: Service
+      name: ai-chatbot-framework-backend
+      namespace: dev
+    - apiVersion: v1
+      kind: Service
+      name: ai-chatbot-framework-frontend
+      namespace: dev
+  
+  # Ignore differences for certain fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+        - /spec/maxReplicas
+  
+  # Sync waves - ensure dependencies are created first
+  syncWave: 1
+

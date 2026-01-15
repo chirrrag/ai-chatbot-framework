@@ -1,0 +1,14 @@
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+    }
+    helm = {
+      source = "hashicorp/helm"
+    }
+     kubectl = {
+      source  = "gavinbunney/kubectl"
+    }
+  }
+  required_version = ">= 0.13"
+}

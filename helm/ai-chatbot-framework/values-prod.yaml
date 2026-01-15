@@ -1,0 +1,141 @@
+# Production environment values
+global:
+  environment: prod
+
+replicaCount:
+  backend: 3
+  frontend: 3
+
+image:
+  backend:
+    tag: "latest"
+  frontend:
+    tag: "latest"
+  pullPolicy: IfNotPresent
+
+backend:
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  nodeSelector:
+    workload-type: general  # Change to "ml" if using ML node group
+  # Uncomment to use ML node group:
+  # nodeSelector:
+  #   workload-type: ml
+  # tolerations:
+  #   - key: workload-type
+  #     value: ml
+  #     effect: NoSchedule
+
+frontend:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+config:
+  applicationEnv: Production
+  spacyLangModel: "en_core_web_lg"
+  llm:
+    enabled: true
+    baseUrl: ""  # Set your LLM endpoint
+    apiKey: ""  # Set from secret
+    modelName: "llama2:13b-chat"
+    maxTokens: 4096
+    temperature: 0.7
+
+# Use DocumentDB in production (recommended)
+mongodb:
+  enabled: false
+
+documentdb:
+  enabled: true
+  endpoint: ""  # Set your DocumentDB endpoint from Terraform output
+  port: 27017
+  database: ai_chatbot_framework
+  secretName: ""  # Reference to AWS Secrets Manager secret
+  # Or use direct credentials (not recommended):
+  # username: ""
+  # password: ""
+
+# Alternative: Use Bitnami MongoDB in production
+# mongodb:
+#   enabled: true
+#   architecture: replicaset
+#   auth:
+#     rootPassword: ""  # Generate strong password
+#     password: ""  # Generate strong password
+#   persistence:
+#     size: 100Gi
+#   resources:
+#     requests:
+#       memory: "2Gi"
+#       cpu: "1000m"
+#     limits:
+#       memory: "4Gi"
+#       cpu: "2000m"
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: ""  # Set your ACM certificate ARN
+    alb.ingress.kubernetes.io/load-balancer-attributes: |
+      idle_timeout.timeout_seconds=60,
+      routing.http2.enabled=true
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+  hosts:
+    - host: chatbot.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+
+podDisruptionBudget:
+  enabled: true
+  backend:
+    minAvailable: 2
+  frontend:
+    minAvailable: 2
+
+persistence:
+  enabled: true
+  storageClass: "gp3"
+  size: 50Gi
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+

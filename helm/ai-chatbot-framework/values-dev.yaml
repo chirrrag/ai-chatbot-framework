@@ -1,0 +1,80 @@
+# Development environment values
+global:
+  environment: dev
+
+replicaCount:
+  backend: 1
+  frontend: 1
+
+image:
+  backend:
+    tag: "dev"
+  frontend:
+    tag: "dev"
+
+backend:
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  autoscaling:
+    enabled: false
+  nodeSelector:
+    workload-type: general
+
+frontend:
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  autoscaling:
+    enabled: false
+
+config:
+  applicationEnv: Development
+  spacyLangModel: "en_core_web_md"  # Lighter model for dev
+
+mongodb:
+  enabled: true
+  auth:
+    rootPassword: "dev-password"
+    password: "dev-password"
+  persistence:
+    size: 10Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+documentdb:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+  hosts:
+    - host: chatbot-dev.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /api
+          pathType: Prefix
+          service: backend
+
+podDisruptionBudget:
+  enabled: false
+

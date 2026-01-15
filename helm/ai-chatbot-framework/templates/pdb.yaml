@@ -1,0 +1,35 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- if .Values.backend.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ai-chatbot-framework.fullname" . }}-backend
+  labels:
+    {{- include "ai-chatbot-framework.labels" . | nindent 4 }}
+    component: backend
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.backend.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ai-chatbot-framework.selectorLabels" . | nindent 6 }}
+      component: backend
+{{- end }}
+
+---
+{{- if .Values.frontend.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ai-chatbot-framework.fullname" . }}-frontend
+  labels:
+    {{- include "ai-chatbot-framework.labels" . | nindent 4 }}
+    component: frontend
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.frontend.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ai-chatbot-framework.selectorLabels" . | nindent 6 }}
+      component: frontend
+{{- end }}
+{{- end }}
+

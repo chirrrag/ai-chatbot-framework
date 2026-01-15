@@ -1,0 +1,98 @@
+# ArgoCD Application for Staging Environment
+# This application deploys the AI Chatbot Framework to the staging environment
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-chatbot-framework-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/name: ai-chatbot-framework
+    app.kubernetes.io/instance: staging
+    environment: staging
+    app.kubernetes.io/part-of: argocd-apps
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/your-org/ai-chatbot-framework  # Update with your repo URL
+    targetRevision: staging  # Use staging branch for staging environment
+    path: helm/ai-chatbot-framework
+    helm:
+      valueFiles:
+        - values-staging.yaml
+      # Override specific values if needed
+      # values: |
+      #   image:
+      #     backend:
+      #       tag: "staging-latest"
+      #     frontend:
+      #       tag: "staging-latest"
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: staging
+  
+  syncPolicy:
+    # Manual sync for staging (requires approval)
+    automated:
+      prune: false
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    # Rollback configuration
+    syncStrategy:
+      hook: {}
+  
+  # Health checks
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ai-chatbot-framework-backend
+      namespace: staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ai-chatbot-framework-frontend
+      namespace: staging
+    - apiVersion: v1
+      kind: Service
+      name: ai-chatbot-framework-backend
+      namespace: staging
+    - apiVersion: v1
+      kind: Service
+      name: ai-chatbot-framework-frontend
+      namespace: staging
+    - apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      name: ai-chatbot-framework
+      namespace: staging
+  
+  # Ignore differences for certain fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+        - /spec/maxReplicas
+  
+  # Sync waves
+  syncWave: 2
+
